@@ -1,4 +1,4 @@
-import { ListTablesCommand, DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   UpdateCommand,
   PutCommand,
@@ -7,39 +7,47 @@ import {
   DeleteCommand,
 } from "@aws-sdk/lib-dynamodb";
 
-const client = new DynamoDBClient();
+const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
 
-export const handler = async (event, context) => {
-  let response;
+export const handler = async (event) => {
+  try {
+    let response;
 
-  switch (event.httpMethod) {
-    case "GET":
-      response = await handleGetRequest();
-      break;
-    case "POST":
-      response = await handlePostRequest(event, context);
-      break;
-    case "PATCH":
-      response = await handlePatchRequest(event);
-      break;
-    case "DELETE":
-      response = await handleDeleteRequest(event);
-      break;
-    default:
-      response = {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: "Invalid request type",
-          event: event,
-          context: context,
-        }),
-      };
+    switch (event.httpMethod) {
+      case "GET":
+        response = await handleGetRequest();
+        break;
+      case "POST":
+        response = await handlePostRequest(event);
+        break;
+      case "PATCH":
+        response = await handlePatchRequest(event);
+        break;
+      case "DELETE":
+        response = await handleDeleteRequest(event);
+        break;
+      default:
+        response = {
+          statusCode: 400,
+          body: JSON.stringify({ message: "Invalid request type" }),
+        };
+    }
+
+    return response;
+
+  } catch (error) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        message: "Error",
+        error: error.message,
+      }),
+    };
   }
-
-  return response;
 };
 
+// GET
 const handleGetRequest = async () => {
   const command = new ScanCommand({
     TableName: "tasks",
@@ -53,13 +61,14 @@ const handleGetRequest = async () => {
   };
 };
 
-const handlePostRequest = async (event, context) => {
+// POST
+const handlePostRequest = async (event) => {
   const { name, completed } = JSON.parse(event.body);
 
   const command = new PutCommand({
     TableName: "tasks",
     Item: {
-      id: context.awsRequestId,
+      id: Date.now().toString(),
       name,
       completed,
     },
@@ -69,22 +78,21 @@ const handlePostRequest = async (event, context) => {
 
   return {
     statusCode: 200,
-    body: JSON.stringify({ message: "Task created successfully" }),
+    body: JSON.stringify({ message: "Task created" }),
   };
 };
 
-export const handlePatchRequest = async (event, context) => {
+// PATCH
+const handlePatchRequest = async (event) => {
   const { id, name, completed } = JSON.parse(event.body);
 
   const command = new UpdateCommand({
     TableName: "tasks",
-    Key: {
-      id,
-    },
+    Key: { id },
+    UpdateExpression: "set #n = :n, completed = :c",
     ExpressionAttributeNames: {
-      "#name": "name",
+      "#n": "name",
     },
-    UpdateExpression: "set #name = :n, completed = :c",
     ExpressionAttributeValues: {
       ":n": name,
       ":c": completed,
@@ -96,29 +104,23 @@ export const handlePatchRequest = async (event, context) => {
 
   return {
     statusCode: 200,
-    body: JSON.stringify({
-      message: "Task updated successfully",
-      task: response.Attributes,
-    }),
+    body: JSON.stringify(response.Attributes),
   };
 };
 
+// DELETE
 const handleDeleteRequest = async (event) => {
   const { id } = JSON.parse(event.body);
 
   const command = new DeleteCommand({
     TableName: "tasks",
     Key: { id },
-    ReturnValues: "ALL_OLD",
   });
 
-  const response = await docClient.send(command);
+  await docClient.send(command);
 
   return {
     statusCode: 200,
-    body: JSON.stringify({
-      message: "Task deleted successfully",
-      task: response.Attributes,
-    }),
+    body: JSON.stringify({ message: "Deleted" }),
   };
 };
